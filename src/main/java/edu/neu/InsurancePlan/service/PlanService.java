@@ -92,7 +92,7 @@ public class PlanService {
     
     public void saveKeyValuePairs(JsonNode rootNode) {
 		JsonNode planCostSharesNode = rootNode.get("planCostShares");
-		String planCostSharesId = planCostSharesNode.get("objectType").textValue() + "-" + planCostSharesNode.get("objectId").textValue();
+		String planCostSharesId = planCostSharesNode.get("objectType").textValue() + "_" + planCostSharesNode.get("objectId").textValue();
 		//redisService.postValue(planCostSharesId, planCostSharesNode.toString());
 		
 		redisTemplate.opsForValue().set(planCostSharesId, planCostSharesNode.toString());
@@ -101,7 +101,7 @@ public class PlanService {
 		for (JsonNode node : planServices) {
 			Iterator<Map.Entry<String, JsonNode>> itr = node.fields();
 			if (node != null) {
-				redisTemplate.opsForValue().set(node.get("objectType").textValue() + "-" + node.get("objectId").textValue(),
+				redisTemplate.opsForValue().set(node.get("objectType").textValue() + "_" + node.get("objectId").textValue(),
 						node.toString());
 			}
 				
@@ -112,13 +112,13 @@ public class PlanService {
 				System.out.println(val.getValue());
 				if (val.getKey().equals("linkedService")) {
 					JsonNode linkedServiceNode = (JsonNode) val.getValue();
-					redisTemplate.opsForValue().set(linkedServiceNode.get("objectType").textValue() + "-"
+					redisTemplate.opsForValue().set(linkedServiceNode.get("objectType").textValue() + "_"
 							+ linkedServiceNode.get("objectId").textValue(), linkedServiceNode.toString());
 				}
 				if (val.getKey().equals("planserviceCostShares")) {
 					JsonNode planserviceCostSharesNode = (JsonNode) val.getValue();
 					redisTemplate.opsForValue().set(
-							planserviceCostSharesNode.get("objectType").textValue() + "-"
+							planserviceCostSharesNode.get("objectType").textValue() + "_"
 									+ planserviceCostSharesNode.get("objectId").textValue(),
 							planserviceCostSharesNode.toString());
 				}
@@ -132,13 +132,13 @@ public class PlanService {
     
     public void deleteKeyValuePairs(JsonNode rootNode) {
 		JsonNode planCostSharesNode = rootNode.get("planCostShares");
-		String planCostSharesId = planCostSharesNode.get("objectType").textValue() + "-" + planCostSharesNode.get("objectId").textValue();
+		String planCostSharesId = planCostSharesNode.get("objectType").textValue() + "_" + planCostSharesNode.get("objectId").textValue();
 		redisTemplate.delete(planCostSharesId);
 		ArrayNode planServices = (ArrayNode) rootNode.get("linkedPlanServices");
 		for (JsonNode node : planServices) {
 			Iterator<Map.Entry<String, JsonNode>> itr = node.fields();
 			if (node != null)
-				redisTemplate.delete(node.get("objectType").textValue() + "-" + node.get("objectId").textValue());
+				redisTemplate.delete(node.get("objectType").textValue() + "_" + node.get("objectId").textValue());
 
 			while (itr.hasNext()) {
 				Map.Entry<String, JsonNode> val = itr.next();
@@ -146,13 +146,13 @@ public class PlanService {
 				System.out.println(val.getValue());
 				if (val.getKey().equals("linkedService")) {
 					JsonNode linkedServiceNode = (JsonNode) val.getValue();
-					redisTemplate.delete(linkedServiceNode.get("objectType").textValue() + "-"
+					redisTemplate.delete(linkedServiceNode.get("objectType").textValue() + "_"
 							+ linkedServiceNode.get("objectId").textValue());
 
 				}
 				if (val.getKey().equals("planserviceCostShares")) {
 					JsonNode planserviceCostSharesNode = (JsonNode) val.getValue();
-					redisTemplate.delete(planserviceCostSharesNode.get("objectType").textValue() + "-"
+					redisTemplate.delete(planserviceCostSharesNode.get("objectType").textValue() + "_"
 							+ planserviceCostSharesNode.get("objectId").textValue());
 
 				}
@@ -170,7 +170,7 @@ public class PlanService {
 		try {
 			
 		    redisTemplate.delete(id);
-		    redisTemplate.delete("plan-"+id );
+		    redisTemplate.delete("plan_"+id );
 			
 		} catch (Exception e) {
 			// TODO: handle exception

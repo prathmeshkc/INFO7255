@@ -5,12 +5,11 @@ package edu.neu.InsurancePlan.controller;
 
 import java.io.IOException;
 import java.sql.Timestamp;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
+import edu.neu.InsurancePlan.config.RabbitMQConfig;
 import org.json.JSONObject;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -62,9 +61,11 @@ public class PlanController {
     @Autowired
     private RedisTemplate redisTemplate;
 
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
     @PostMapping(value = "/plan", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> savePlan(@RequestHeader(value = "Authorization", required = false) String bearerToken,
-                                      @RequestBody String requestBody) {
+    public ResponseEntity<?> savePlan(@RequestHeader(value = "Authorization", required = false) String bearerToken, @RequestBody String requestBody) {
 
         if (bearerToken == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new JSONObject().put("error", "Please pass the Access Token").toString());
@@ -78,8 +79,7 @@ public class PlanController {
             // jsonSchemaValidatorService.validate(requestBody);
             JsonNode rootNode = jsonSchemaValidatorService.validateSchema(requestBody);
             if (rootNode.get("objectId") == null) {
-                ApiError apiError = new ApiError(HttpStatus.BAD_REQUEST.toString(), "Please enter a valid json data",
-                        new Timestamp(System.currentTimeMillis()));
+                ApiError apiError = new ApiError(HttpStatus.BAD_REQUEST.toString(), "Please enter a valid json data", new Timestamp(System.currentTimeMillis()));
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
             }
 
@@ -103,6 +103,13 @@ public class PlanController {
             String newPlan = planservice.fetchObject(planId);
             String etag = MD5(newPlan);
 
+            //Push the message to the queue
+            Map<String, String> message = new HashMap<>();
+            message.put("operation", "SAVE");
+            message.put("body", requestBody);
+            rabbitTemplate.convertAndSend(RabbitMQConfig.queueName, message);
+
+
             return ResponseEntity.status(HttpStatus.CREATED).eTag(etag).body(new JSONObject().put("message", "Plan added successfully!").toString());
         } catch (Exception e) {
             e.printStackTrace();
@@ -112,8 +119,7 @@ public class PlanController {
     }
 
     @GetMapping(value = "/plan/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> getPlan(@PathVariable(value = "id") String id,
-                                     @RequestHeader(value = "Authorization", required = false) String bearerToken,
+    public ResponseEntity<?> getPlan(@PathVariable(value = "id") String id, @RequestHeader(value = "Authorization", required = false) String bearerToken,
 
                                      @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String eTag) {
 
@@ -151,9 +157,7 @@ public class PlanController {
     }
 
     @DeleteMapping(value = "/plan/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> deletePlan(@RequestHeader(value = "Authorization", required = false) String bearerToken,
-                                        @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String eTag,
-                                        @PathVariable(value = "id") String id) {
+    public ResponseEntity<?> deletePlan(@RequestHeader(value = "Authorization", required = false) String bearerToken, @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String eTag, @PathVariable(value = "id") String id) {
 
         if (bearerToken == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new JSONObject().put("error", "Please pass the Access Token").toString());
@@ -174,6 +178,12 @@ public class PlanController {
                 return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body(new JSONObject().put("error", "the plan was modified!").toString());
             }
 
+            //Push message to queue for deleting
+            Map<String, String> message = new HashMap<>();
+            message.put("operation", "DELETE");
+            message.put("body", value);
+            rabbitTemplate.convertAndSend(RabbitMQConfig.queueName, message);
+
             planservice.deleteObject(id);
             planservice.deleteKeyValuePairs(new ObjectMapper().readValue(value, ObjectNode.class));
             redisTemplate.getConnectionFactory().getConnection().flushAll();
@@ -189,9 +199,7 @@ public class PlanController {
 
 
     @PatchMapping(value = "/plan/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> updatePlan(@RequestHeader(value = "Authorization", required = false) String bearerToken,
-                                        @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String eTag,
-                                        @RequestBody String requestBody, @PathVariable(value = "id") String id) throws Exception {
+    public ResponseEntity<?> updatePlan(@RequestHeader(value = "Authorization", required = false) String bearerToken, @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String eTag, @RequestBody String requestBody, @PathVariable(value = "id") String id) throws Exception {
 
         if (bearerToken == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new JSONObject().put("error", "Please pass the Access Token").toString());
@@ -248,21 +256,26 @@ public class PlanController {
                 }
             }
             planServicesNew.removeAll();
-            if (!planServicesSet.isEmpty())
-                planServicesSet.forEach(s -> {
-                    planServicesNew.add(s);
-                });
+            if (!planServicesSet.isEmpty()) planServicesSet.forEach(s -> {
+                planServicesNew.add(s);
+            });
             redisTemplate.opsForValue().set(internalID, newNode.toString());
             // planservice.deleteKeyValuePairs(oldNode);
             planservice.saveKeyValuePairs(newNode);
             String existingPlan = planservice.fetchObject(internalID);
             latestEtag = MD5(existingPlan);
+
+            //Push message to queue to Patch
+            Map<String, String> message = new HashMap<>();
+            message.put("operation", "SAVE");
+            message.put("body", requestBody);
+            rabbitTemplate.convertAndSend(RabbitMQConfig.queueName, message);
+
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new JSONObject().put("error", "Invalid Data!").toString());
         }
 
-        return ResponseEntity.ok().eTag(latestEtag)
-                .body(new JSONObject().put("message", "Patched data with key:" + internalID).toString());
+        return ResponseEntity.ok().eTag(latestEtag).body(new JSONObject().put("message", "Patched data with key:" + internalID).toString());
 
     }
 
